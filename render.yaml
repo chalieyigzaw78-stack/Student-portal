@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: student-portal
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT app:app
+    envVars:
+      - key: DB_PATH
+        value: /opt/render/project/src/portal.db
+      - key: SECRET_KEY
+        value: change-this-to-a-random-secret-key-123456
