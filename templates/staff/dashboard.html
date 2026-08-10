@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Staff Dashboard{% endblock %}
+
+{% block nav_links %}
+<a href="/staff" class="active">✏️ Enter Results</a>
+<a href="/staff/students">👨‍🎓 Students</a>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Staff Dashboard</h1>
+  <p>Welcome, {{ session.name }} — Enter and manage student results</p>
+</div>
+
+<!-- Enter Result Form -->
+<div class="card">
+  <div class="card-header"><h2>✏️ Enter Student Result</h2></div>
+  <div class="card-body">
+    <form method="POST" action="/staff/enter-result">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Student *</label>
+          <select name="student_id" required>
+            <option value="">— Select student —</option>
+            {% for s in students %}
+            <option value="{{ s.id }}">{{ s.full_name }} ({{ s.user_id }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Subject *</label>
+          <select name="subject_id" required>
+            <option value="">— Select subject —</option>
+            {% for s in subjects %}
+            <option value="{{ s.id }}">{{ s.name }} ({{ s.code }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Score (0–100) *</label>
+          <input type="number" name="score" min="0" max="100" step="0.5" placeholder="e.g. 85">
+        </div>
+        <div class="form-group">
+          <label>Semester *</label>
+          <select name="semester" required>
+            <option value="">— Select —</option>
+            <option value="1">Semester 1</option>
+            <option value="2">Semester 2</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Academic Year *</label>
+          <input type="text" name="academic_year" placeholder="e.g. 2023/2024" required>
+        </div>
+        <div class="form-group">
+          <label>Note</label>
+          <input type="text" name="note" placeholder="Optional">
+        </div>
+      </div>
+
+      <!-- Grade preview -->
+      <div id="grade-preview" style="display:none; margin-top:16px; padding:14px 18px; background:#e8eaf6; border-radius:10px;">
+        <span style="font-size:0.88rem; color:#1a237e;">
+          Grade: <strong id="prev-grade" style="font-size:1.1rem;"></strong>
+          &nbsp;|&nbsp; Grade Point: <strong id="prev-point"></strong>
+        </span>
+      </div>
+
+      <div style="margin-top:20px;">
+        <button type="submit" class="btn btn-primary">✅ Save Result</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Recent entries -->
+<div class="card">
+  <div class="card-header"><h2>🕓 Recently Entered Results</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Student</th><th>ID</th><th>Subject</th><th>Score</th><th>Grade</th><th>Semester</th><th>Year</th><th>Date</th></tr>
+      </thead>
+      <tbody>
+        {% for r in recent %}
+        {% set grade_map = {'A':'grade-A','B+':'grade-Bp','B':'grade-B','C+':'grade-Cp','C':'grade-C','D':'grade-D','F':'grade-F'} %}
+        <tr>
+          <td><a href="/staff/student/{{ r.student_id }}" style="color:#1a237e;font-weight:600;">{{ r.full_name }}</a></td>
+          <td class="mono" style="color:#757575;">{{ r.student_no }}</td>
+          <td>{{ r.subject_name }} <span style="color:#9e9e9e;font-size:0.78rem;">({{ r.subject_code }})</span></td>
+          <td class="mono">{{ r.score|int }}</td>
+          <td>
+            {% set g = namespace(letter='', cls='') %}
+            {% if r.score >= 90 %}{% set g.letter = 'A' %}{% set g.cls = 'grade-A' %}
+            {% elif r.score >= 85 %}{% set g.letter = 'B+' %}{% set g.cls = 'grade-Bp' %}
+            {% elif r.score >= 80 %}{% set g.letter = 'B' %}{% set g.cls = 'grade-B' %}
+            {% elif r.score >= 75 %}{% set g.letter = 'C+' %}{% set g.cls = 'grade-Cp' %}
+            {% elif r.score >= 70 %}{% set g.letter = 'C' %}{% set g.cls = 'grade-C' %}
+            {% elif r.score >= 60 %}{% set g.letter = 'D' %}{% set g.cls = 'grade-D' %}
+            {% else %}{% set g.letter = 'F' %}{% set g.cls = 'grade-F' %}{% endif %}
+            <span class="mono {{ g.cls }}">{{ g.letter }}</span>
+          </td>
+          <td class="mono">{{ r.semester }}</td>
+          <td style="font-size:0.82rem;">{{ r.academic_year }}</td>
+          <td style="font-size:0.78rem;color:#9e9e9e;">{{ r.created_at[:10] }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8"><div class="empty-state"><div class="icon">📭</div><p>No results entered yet.</p></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const gradeMap = [
+  [90, 'A',  4.0], [85, 'B+', 3.5], [80, 'B',  3.0],
+  [75, 'C+', 2.5], [70, 'C',  2.0], [60, 'D',  1.0], [0, 'F', 0.0]
+];
+
+document.querySelector('input[name=score]').addEventListener('input', function() {
+  const score = parseFloat(this.value);
+  const prev  = document.getElementById('grade-preview');
+  if (isNaN(score) || score < 0 || score > 100) { prev.style.display='none'; return; }
+  const [, letter, point] = gradeMap.find(([min]) => score >= min);
+  document.getElementById('prev-grade').textContent = letter;
+  document.getElementById('prev-point').textContent = point.toFixed(1);
+  prev.style.display = 'block';
+});
+</script>
+{% endblock %}
