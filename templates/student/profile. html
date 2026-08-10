@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}My Profile{% endblock %}
+
+{% block nav_links %}
+<a href="/student">📊 My Results</a>
+<a href="/student/profile" class="active">👤 Profile</a>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>My Profile</h1>
+  <p>Your account information</p>
+</div>
+
+<div class="card" style="max-width:500px;">
+  <div class="card-header"><h2>👤 Student Information</h2></div>
+  <div class="card-body">
+    <table>
+      <tr><td style="color:var(--text-mid);width:140px;font-size:0.85rem;">Full Name</td><td><strong>{{ user.full_name }}</strong></td></tr>
+      <tr><td style="color:var(--text-mid);font-size:0.85rem;">Student ID</td><td class="mono">{{ user.user_id }}</td></tr>
+      <tr><td style="color:var(--text-mid);font-size:0.85rem;">Department</td><td>{{ user.department or '—' }}</td></tr>
+      <tr><td style="color:var(--text-mid);font-size:0.85rem;">Year</td><td>{{ user.year or '—' }}</td></tr>
+      <tr><td style="color:var(--text-mid);font-size:0.85rem;">Section</td><td>{{ user.section or '—' }}</td></tr>
+      <tr><td style="color:var(--text-mid);font-size:0.85rem;">Email</td><td>{{ user.email or '—' }}</td></tr>
+      <tr><td style="color:var(--text-mid);font-size:0.85rem;">Phone</td><td>{{ user.phone or '—' }}</td></tr>
+      <tr><td style="color:var(--text-mid);font-size:0.85rem;">Registered</td><td style="font-size:0.82rem;color:var(--text-faint);">{{ user.created_at[:10] }}</td></tr>
+    </table>
+  </div>
+</div>
+{% endblock %}
