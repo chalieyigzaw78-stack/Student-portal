@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Manage Students{% endblock %}
+
+{% block nav_links %}
+<a href="/admin">📊 Dashboard</a>
+<a href="/admin/students" class="active">👨‍🎓 Students</a>
+<a href="/admin/staff">👨‍🏫 Staff</a>
+<a href="/admin/subjects">📚 Subjects</a>
+<a href="/admin/results">📋 Results</a>
+{% endblock %}
+
+{% block content %}
+<div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+  <div>
+    <h1>Students</h1>
+    <p>{{ students|length }} registered students</p>
+  </div>
+  <button class="btn btn-primary" onclick="document.getElementById('add-modal').classList.add('open')">+ Add Student</button>
+</div>
+
+<div class="card">
+  <div style="padding:14px 20px;background:#f5f5f5;border-bottom:1px solid #e0e0e0;">
+    <input type="text" id="search" placeholder="Search name or ID..." oninput="filterTable()"
+      style="padding:8px 12px;border:1.5px solid #e0e0e0;border-radius:8px;font-size:0.88rem;width:260px;">
+  </div>
+  <div class="table-wrap">
+    <table id="stud-table">
+      <thead>
+        <tr><th>#</th><th>Student ID</th><th>Full Name</th><th>Department</th><th>Year</th><th>Section</th><th>Email</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for s in students %}
+        <tr data-name="{{ s.full_name|lower }}" data-id="{{ s.user_id|lower }}">
+          <td class="mono" style="color:#9e9e9e;">{{ loop.index }}</td>
+          <td class="mono">{{ s.user_id }}</td>
+          <td><a href="/admin/student/{{ s.id }}" style="color:#1a237e;font-weight:600;">{{ s.full_name }}</a></td>
+          <td>{{ s.department or '—' }}</td>
+          <td>{{ s.year or '—' }}</td>
+          <td>{{ s.section or '—' }}</td>
+          <td style="font-size:0.82rem;color:#757575;">{{ s.email or '—' }}</td>
+          <td style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn btn-ghost btn-xs" onclick="openReset({{ s.id }}, '{{ s.full_name }}')">Reset PW</button>
+            <form method="POST" action="/admin/delete-student/{{ s.id }}" onsubmit="return confirm('Delete {{ s.full_name }}?')">
+              <button type="submit" class="btn btn-danger btn-xs">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8"><div class="empty-state"><div class="icon">👨‍🎓</div><p>No students yet.</p></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Add Student Modal -->
+<div class="modal-overlay" id="add-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>➕ Add Student</h3>
+      <button class="modal-close" onclick="document.getElementById('add-modal').classList.remove('open')">✕</button>
+    </div>
+    <form method="POST" action="/admin/add-student">
+      <div class="modal-body">
+        <div class="form-grid" style="grid-template-columns:1fr 1fr;">
+          <div class="form-group" style="grid-column:1/-1;">
+            <label>Full Name *</label>
+            <input type="text" name="full_name" required placeholder="e.g. Abebe Girma">
+          </div>
+          <div class="form-group">
+            <label>Student ID *</label>
+            <input type="text" name="user_id" required placeholder="e.g. ET/1234/15">
+          </div>
+          <div class="form-group">
+            <label>Password *</label>
+            <input type="text" name="password" required placeholder="Initial password">
+          </div>
+          <div class="form-group">
+            <label>Department</label>
+            <input type="text" name="department" placeholder="e.g. Computer Science">
+          </div>
+          <div class="form-group">
+            <label>Year</label>
+            <select name="year">
+              <option value="1">Year 1</option>
+              <option value="2">Year 2</option>
+              <option value="3">Year 3</option>
+              <option value="4">Year 4</option>
+              <option value="5">Year 5</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Section</label>
+            <input type="text" name="section" placeholder="e.g. A">
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" name="email" placeholder="Optional">
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <input type="text" name="phone" placeholder="Optional">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('add-modal').classList.remove('open')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Student</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Reset Password Modal -->
+<div class="modal-overlay" id="reset-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>🔑 Reset Password</h3>
+      <button class="modal-close" onclick="document.getElementById('reset-modal').classList.remove('open')">✕</button>
+    </div>
+    <form method="POST" id="reset-form">
+      <div class="modal-body">
+        <p style="margin-bottom:16px;font-size:0.9rem;color:#616161;">Resetting password for: <strong id="reset-name"></strong></p>
+        <div class="form-group">
+          <label>New Password *</label>
+          <input type="text" name="new_password" required placeholder="Enter new password">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('reset-modal').classList.remove('open')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Reset Password</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterTable() {
+  const q = document.getElementById('search').value.toLowerCase();
+  document.querySelectorAll('#stud-table tbody tr[data-name]').forEach(row => {
+    row.style.display = (row.dataset.name.includes(q) || row.dataset.id.includes(q)) ? '' : 'none';
+  });
+}
+function openReset(id, name) {
+  document.getElementById('reset-name').textContent = name;
+  document.getElementById('reset-form').action = '/admin/reset-password/' + id;
+  document.getElementById('reset-modal').classList.add('open');
+}
+</script>
+{% endblock %}
