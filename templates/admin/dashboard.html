@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block nav_links %}
+<a href="/admin" class="active">📊 Dashboard</a>
+<a href="/admin/students">👨‍🎓 Students</a>
+<a href="/admin/staff">👨‍🏫 Staff</a>
+<a href="/admin/subjects">📚 Subjects</a>
+<a href="/admin/results">📋 Results</a>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Admin Dashboard</h1>
+  <p>Full system overview and management</p>
+</div>
+
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-label">Students</div>
+    <div class="stat-value">{{ stats.students }}</div>
+    <div class="stat-sub"><a href="/admin/students" style="color:var(--navy-light);">Manage →</a></div>
+  </div>
+  <div class="stat-card gold">
+    <div class="stat-label">Staff</div>
+    <div class="stat-value">{{ stats.staff }}</div>
+    <div class="stat-sub"><a href="/admin/staff" style="color:var(--navy-light);">Manage →</a></div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-label">Subjects</div>
+    <div class="stat-value">{{ stats.subjects }}</div>
+    <div class="stat-sub"><a href="/admin/subjects" style="color:var(--navy-light);">Manage →</a></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Results Entered</div>
+    <div class="stat-value">{{ stats.results }}</div>
+    <div class="stat-sub"><a href="/admin/results" style="color:var(--navy-light);">View all →</a></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>🕓 Recent Results</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Student</th><th>Subject</th><th>Score</th><th>Grade</th><th>Semester</th><th>Year</th><th>Staff</th><th>Date</th></tr>
+      </thead>
+      <tbody>
+        {% for r in recent_results %}
+        <tr>
+          <td>
+            <a href="/admin/student/{{ r.student_id }}" style="color:#1a237e;font-weight:600;">{{ r.full_name }}</a>
+            <span style="color:#9e9e9e;font-size:0.78rem;"> ({{ r.student_no }})</span>
+          </td>
+          <td>{{ r.subject_name }}</td>
+          <td class="mono">{{ r.score|int }}</td>
+          <td>
+            {% if r.score >= 90 %}<span class="mono grade-A">A</span>
+            {% elif r.score >= 85 %}<span class="mono grade-Bp">B+</span>
+            {% elif r.score >= 80 %}<span class="mono grade-B">B</span>
+            {% elif r.score >= 75 %}<span class="mono grade-Cp">C+</span>
+            {% elif r.score >= 70 %}<span class="mono grade-C">C</span>
+            {% elif r.score >= 60 %}<span class="mono grade-D">D</span>
+            {% else %}<span class="mono grade-F">F</span>{% endif %}
+          </td>
+          <td class="mono">{{ r.semester }}</td>
+          <td style="font-size:0.82rem;">{{ r.academic_year }}</td>
+          <td style="font-size:0.82rem;color:#757575;">{{ r.staff_name or '—' }}</td>
+          <td style="font-size:0.78rem;color:#9e9e9e;">{{ r.created_at[:10] }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8"><div class="empty-state"><p>No results yet.</p></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
