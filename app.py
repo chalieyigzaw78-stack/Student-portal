@@ -1,6 +1,7 @@
 """
 app.py — Student Academic Result Portal
 Three roles: Admin, Staff, Student
+Assessments: Quiz(5), Test1(10), Test2(15), Assignment(10), Final(60) = 100
 """
 
 import os
@@ -17,6 +18,16 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key-in-production")
 DB_PATH = os.environ.get("DB_PATH", "portal.db")
 
+# ─── Assessment definitions ────────────────────────────────────────────────
+ASSESSMENTS = [
+    {"key": "quiz",       "label": "Quiz",        "max": 5},
+    {"key": "test1",      "label": "Test 1",       "max": 10},
+    {"key": "test2",      "label": "Test 2",       "max": 15},
+    {"key": "assignment", "label": "Assignment",   "max": 10},
+    {"key": "final",      "label": "Final Exam",   "max": 60},
+]
+TOTAL_MAX = sum(a["max"] for a in ASSESSMENTS)  # 100
+
 
 # ─── Grading System ────────────────────────────────────────────────────────
 
@@ -31,11 +42,10 @@ def score_to_grade(score):
 
 
 def calc_gpa(results):
-    """Calculate GPA from a list of result rows."""
     total_points = 0
     total_credits = 0
     for r in results:
-        grade_letter, grade_point = score_to_grade(r["score"])
+        grade_letter, grade_point = score_to_grade(r["total_score"])
         total_points  += grade_point * r["credit_hours"]
         total_credits += r["credit_hours"]
     if total_credits == 0:
@@ -79,20 +89,25 @@ def init_db():
         );
 
         CREATE TABLE IF NOT EXISTS results (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id   INTEGER NOT NULL REFERENCES users(id),
-            subject_id   INTEGER NOT NULL REFERENCES subjects(id),
-            staff_id     INTEGER REFERENCES users(id),
-            score        REAL NOT NULL,
-            semester     TEXT NOT NULL,
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id    INTEGER NOT NULL REFERENCES users(id),
+            subject_id    INTEGER NOT NULL REFERENCES subjects(id),
+            staff_id      INTEGER REFERENCES users(id),
+            quiz          REAL NOT NULL DEFAULT 0,
+            test1         REAL NOT NULL DEFAULT 0,
+            test2         REAL NOT NULL DEFAULT 0,
+            assignment    REAL NOT NULL DEFAULT 0,
+            final         REAL NOT NULL DEFAULT 0,
+            total_score   REAL NOT NULL DEFAULT 0,
+            semester      TEXT NOT NULL,
             academic_year TEXT NOT NULL,
-            note         TEXT,
-            created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+            note          TEXT,
+            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
             UNIQUE(student_id, subject_id, semester, academic_year)
         );
     """)
 
-    # Create default admin if not exists
+    # Default admin
     admin = conn.execute("SELECT id FROM users WHERE role='admin' LIMIT 1").fetchone()
     if not admin:
         conn.execute(
@@ -116,12 +131,9 @@ def login_required(role=None):
         def decorated(*args, **kwargs):
             if "user_id" not in session:
                 return redirect(url_for("login"))
-            if role and session.get("role") != role:
-                if isinstance(role, (list, tuple)):
-                    if session.get("role") not in role:
-                        flash("Access denied.", "error")
-                        return redirect(url_for("login"))
-                else:
+            if role:
+                allowed = role if isinstance(role, (list, tuple)) else [role]
+                if session.get("role") not in allowed:
                     flash("Access denied.", "error")
                     return redirect(url_for("login"))
             return f(*args, **kwargs)
@@ -155,22 +167,18 @@ def login():
     if request.method == "POST":
         user_id  = request.form.get("user_id", "").strip()
         password = request.form.get("password", "").strip()
-
         db = get_db()
         user = db.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
         db.close()
-
         if user and check_password_hash(user["password_hash"], password):
             session["user_id"] = user["id"]
             session["role"]    = user["role"]
             session["name"]    = user["full_name"]
-
             if user["role"] == "student": return redirect(url_for("student_dashboard"))
             if user["role"] == "staff":   return redirect(url_for("staff_dashboard"))
             if user["role"] == "admin":   return redirect(url_for("admin_dashboard"))
         else:
             flash("Invalid ID or password.", "error")
-
     return render_template("login.html")
 
 
@@ -187,20 +195,15 @@ def logout():
 def student_dashboard():
     user = current_user()
     db   = get_db()
-
-    # Get all results grouped by semester
     results = db.execute("""
-        SELECT r.*, s.name as subject_name, s.code as subject_code,
-               s.credit_hours, r.semester, r.academic_year
+        SELECT r.*, s.name as subject_name, s.code as subject_code, s.credit_hours
         FROM results r
         JOIN subjects s ON r.subject_id = s.id
         WHERE r.student_id = ?
         ORDER BY r.academic_year DESC, r.semester DESC, s.name
     """, (user["id"],)).fetchall()
-
     db.close()
 
-    # Group by academic_year + semester
     semesters = {}
     for r in results:
         key = f"{r['academic_year']} — Semester {r['semester']}"
@@ -208,15 +211,12 @@ def student_dashboard():
             semesters[key] = []
         semesters[key].append(r)
 
-    # Calculate GPA per semester and CGPA
     semester_gpas = {}
-    all_results   = list(results)
-
     for key, rows in semesters.items():
         gpa, credits = calc_gpa(rows)
         semester_gpas[key] = {"gpa": gpa, "credits": credits}
 
-    cgpa, total_credits = calc_gpa(all_results)
+    cgpa, total_credits = calc_gpa(list(results))
 
     return render_template(
         "student/dashboard.html",
@@ -225,7 +225,8 @@ def student_dashboard():
         semester_gpas=semester_gpas,
         cgpa=cgpa,
         total_credits=total_credits,
-        score_to_grade=score_to_grade
+        score_to_grade=score_to_grade,
+        assessments=ASSESSMENTS
     )
 
 
@@ -243,9 +244,7 @@ def student_profile():
 def staff_dashboard():
     user = current_user()
     db   = get_db()
-    students = db.execute(
-        "SELECT * FROM users WHERE role='student' ORDER BY full_name"
-    ).fetchall()
+    students = db.execute("SELECT * FROM users WHERE role='student' ORDER BY full_name").fetchall()
     subjects = db.execute("SELECT * FROM subjects ORDER BY name").fetchall()
     recent   = db.execute("""
         SELECT r.*, u.full_name, u.user_id as student_no,
@@ -260,7 +259,8 @@ def staff_dashboard():
     return render_template(
         "staff/dashboard.html",
         user=user, students=students,
-        subjects=subjects, recent=recent
+        subjects=subjects, recent=recent,
+        assessments=ASSESSMENTS
     )
 
 
@@ -272,35 +272,49 @@ def staff_enter_result():
 
     student_id    = data.get("student_id")
     subject_id    = data.get("subject_id")
-    score         = data.get("score")
     semester      = data.get("semester")
     academic_year = data.get("academic_year")
     note          = data.get("note", "")
 
-    if not all([student_id, subject_id, score, semester, academic_year]):
+    if not all([student_id, subject_id, semester, academic_year]):
         flash("All fields are required.", "error")
         return redirect(url_for("staff_dashboard"))
 
-    try:
-        score = float(score)
-        if not 0 <= score <= 100:
-            raise ValueError
-    except ValueError:
-        flash("Score must be a number between 0 and 100.", "error")
-        return redirect(url_for("staff_dashboard"))
+    # Collect and validate each assessment score
+    scores = {}
+    for a in ASSESSMENTS:
+        try:
+            val = float(data.get(a["key"], 0))
+            if val < 0 or val > a["max"]:
+                flash(f"{a['label']} score must be between 0 and {a['max']}.", "error")
+                return redirect(url_for("staff_dashboard"))
+            scores[a["key"]] = val
+        except ValueError:
+            flash(f"Invalid score for {a['label']}.", "error")
+            return redirect(url_for("staff_dashboard"))
+
+    total = sum(scores.values())
 
     db = get_db()
     try:
         db.execute("""
             INSERT INTO results
-              (student_id, subject_id, staff_id, score, semester, academic_year, note)
-            VALUES (?,?,?,?,?,?,?)
+              (student_id, subject_id, staff_id, quiz, test1, test2, assignment, final, total_score, semester, academic_year, note)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(student_id, subject_id, semester, academic_year)
-            DO UPDATE SET score=excluded.score, note=excluded.note,
-                          staff_id=excluded.staff_id, created_at=datetime('now')
-        """, (student_id, subject_id, user["id"], score, semester, academic_year, note))
+            DO UPDATE SET
+              quiz=excluded.quiz, test1=excluded.test1, test2=excluded.test2,
+              assignment=excluded.assignment, final=excluded.final,
+              total_score=excluded.total_score, note=excluded.note,
+              staff_id=excluded.staff_id, created_at=datetime('now')
+        """, (
+            student_id, subject_id, user["id"],
+            scores["quiz"], scores["test1"], scores["test2"],
+            scores["assignment"], scores["final"],
+            total, semester, academic_year, note
+        ))
         db.commit()
-        flash("Result saved successfully.", "success")
+        flash(f"Result saved. Total: {total:.1f}/100", "success")
     except Exception as e:
         flash(f"Error: {e}", "error")
     finally:
@@ -313,9 +327,7 @@ def staff_enter_result():
 @login_required(role="staff")
 def staff_students():
     db = get_db()
-    students = db.execute(
-        "SELECT * FROM users WHERE role='student' ORDER BY full_name"
-    ).fetchall()
+    students = db.execute("SELECT * FROM users WHERE role='student' ORDER BY full_name").fetchall()
     db.close()
     return render_template("staff/students.html", students=students)
 
@@ -348,7 +360,8 @@ def staff_view_student(sid):
         "staff/view_student.html",
         student=student, semesters=semesters,
         cgpa=cgpa, total_credits=total_credits,
-        score_to_grade=score_to_grade
+        score_to_grade=score_to_grade,
+        assessments=ASSESSMENTS
     )
 
 
@@ -374,16 +387,14 @@ def admin_dashboard():
         ORDER BY r.created_at DESC LIMIT 10
     """).fetchall()
     db.close()
-    return render_template("admin/dashboard.html", stats=stats, recent_results=recent_results)
+    return render_template("admin/dashboard.html", stats=stats, recent_results=recent_results, score_to_grade=score_to_grade)
 
 
 @app.route("/admin/students")
 @login_required(role="admin")
 def admin_students():
     db = get_db()
-    students = db.execute(
-        "SELECT * FROM users WHERE role='student' ORDER BY full_name"
-    ).fetchall()
+    students = db.execute("SELECT * FROM users WHERE role='student' ORDER BY full_name").fetchall()
     db.close()
     return render_template("admin/students.html", students=students)
 
@@ -400,8 +411,7 @@ def admin_add_student():
         """, (
             data["user_id"].strip(),
             generate_password_hash(data["password"].strip()),
-            data["full_name"].strip(),
-            "student",
+            data["full_name"].strip(), "student",
             data.get("department","").strip(),
             data.get("year", 1),
             data.get("section","").strip(),
@@ -433,9 +443,7 @@ def admin_delete_student(sid):
 @login_required(role="admin")
 def admin_staff():
     db = get_db()
-    staff = db.execute(
-        "SELECT * FROM users WHERE role='staff' ORDER BY full_name"
-    ).fetchall()
+    staff = db.execute("SELECT * FROM users WHERE role='staff' ORDER BY full_name").fetchall()
     db.close()
     return render_template("admin/staff.html", staff=staff)
 
@@ -452,8 +460,7 @@ def admin_add_staff():
         """, (
             data["user_id"].strip(),
             generate_password_hash(data["password"].strip()),
-            data["full_name"].strip(),
-            "staff",
+            data["full_name"].strip(), "staff",
             data.get("department","").strip(),
             data.get("email","").strip(),
             data.get("phone","").strip(),
@@ -538,7 +545,7 @@ def admin_results():
         ORDER BY r.created_at DESC
     """).fetchall()
     db.close()
-    return render_template("admin/results.html", results=results, score_to_grade=score_to_grade)
+    return render_template("admin/results.html", results=results, score_to_grade=score_to_grade, assessments=ASSESSMENTS)
 
 
 @app.route("/admin/student/<int:sid>")
@@ -566,7 +573,8 @@ def admin_view_student(sid):
         "admin/view_student.html",
         student=student, semesters=semesters,
         cgpa=cgpa, total_credits=total_credits,
-        score_to_grade=score_to_grade
+        score_to_grade=score_to_grade,
+        assessments=ASSESSMENTS
     )
 
 
@@ -584,26 +592,6 @@ def admin_reset_password(uid):
     db.close()
     flash("Password reset successfully.", "success")
     return redirect(url_for("admin_students"))
-
-
-# ─── API ───────────────────────────────────────────────────────────────────
-
-@app.route("/api/student-results/<int:sid>")
-@login_required(role=["admin","staff"])
-def api_student_results(sid):
-    db = get_db()
-    results = db.execute("""
-        SELECT r.*, s.name as subject_name, s.code, s.credit_hours
-        FROM results r JOIN subjects s ON r.subject_id=s.id
-        WHERE r.student_id=?
-        ORDER BY r.academic_year DESC, r.semester DESC
-    """, (sid,)).fetchall()
-    db.close()
-    data = []
-    for r in results:
-        grade, point = score_to_grade(r["score"])
-        data.append({**dict(r), "grade": grade, "grade_point": point})
-    return jsonify(data)
 
 
 # ─── Run ───────────────────────────────────────────────────────────────────
