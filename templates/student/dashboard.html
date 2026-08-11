@@ -56,32 +56,36 @@
           <tr>
             <th>Code</th>
             <th>Subject</th>
-            <th>Credit Hrs</th>
-            <th>Score</th>
+            <th>Cr.</th>
+            {% for a in assessments %}
+            <th>{{ a.label }}<br><span style="font-weight:400;opacity:0.7;">/{{ a.max }}</span></th>
+            {% endfor %}
+            <th>Total /100</th>
             <th>Grade</th>
-            <th>Grade Point</th>
+            <th>GP</th>
             <th>Status</th>
           </tr>
         </thead>
         <tbody>
           {% for r in results %}
-          {% set grade, point = score_to_grade(r.score) %}
+          {% set grade, point = score_to_grade(r.total_score) %}
           {% set grade_class = 'grade-' + grade.replace('+','p') %}
           <tr>
             <td class="mono" style="color:#616161;">{{ r.subject_code }}</td>
             <td><strong>{{ r.subject_name }}</strong></td>
             <td class="mono" style="text-align:center;">{{ r.credit_hours }}</td>
-            <td class="mono {{ grade_class }}">{{ r.score|int }}</td>
+            <td class="mono">{{ r.quiz }}</td>
+            <td class="mono">{{ r.test1 }}</td>
+            <td class="mono">{{ r.test2 }}</td>
+            <td class="mono">{{ r.assignment }}</td>
+            <td class="mono">{{ r.final }}</td>
+            <td class="mono {{ grade_class }}"><strong>{{ r.total_score|int }}</strong></td>
             <td><span class="mono {{ grade_class }}" style="font-size:1rem;">{{ grade }}</span></td>
             <td class="mono" style="text-align:center;">{{ "%.1f"|format(point) }}</td>
             <td>
-              {% if grade == 'F' %}
-                <span class="badge badge-red">Failed</span>
-              {% elif grade == 'D' %}
-                <span class="badge badge-gold">Pass</span>
-              {% else %}
-                <span class="badge badge-green">Pass</span>
-              {% endif %}
+              {% if grade == 'F' %}<span class="badge badge-red">Failed</span>
+              {% elif grade == 'D' %}<span class="badge badge-gold">Pass</span>
+              {% else %}<span class="badge badge-green">Pass</span>{% endif %}
             </td>
           </tr>
           {% endfor %}
