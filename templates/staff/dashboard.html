@@ -37,10 +37,6 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Score (0–100) *</label>
-          <input type="number" name="score" min="0" max="100" step="0.5" placeholder="e.g. 85">
-        </div>
-        <div class="form-group">
           <label>Semester *</label>
           <select name="semester" required>
             <option value="">— Select —</option>
@@ -52,18 +48,34 @@
           <label>Academic Year *</label>
           <input type="text" name="academic_year" placeholder="e.g. 2023/2024" required>
         </div>
-        <div class="form-group">
-          <label>Note</label>
-          <input type="text" name="note" placeholder="Optional">
+      </div>
+
+      <!-- Assessment scores -->
+      <div style="margin-top:20px; padding:18px; background:#f8f9ff; border-radius:10px; border:1px solid #e8eaf6;">
+        <div style="font-size:0.78rem; font-weight:700; color:#3949ab; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:14px;">
+          📝 Assessment Scores
+        </div>
+        <div class="form-grid">
+          {% for a in assessments %}
+          <div class="form-group">
+            <label>{{ a.label }} <span style="color:#9e9e9e; font-weight:400;">(max {{ a.max }})</span></label>
+            <input type="number" name="{{ a.key }}" min="0" max="{{ a.max }}"
+              step="0.5" placeholder="0 – {{ a.max }}" oninput="calcTotal()">
+          </div>
+          {% endfor %}
+        </div>
+
+        <!-- Live total -->
+        <div style="margin-top:16px; padding:12px 16px; background:#e8eaf6; border-radius:8px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+          <span style="font-size:0.85rem; color:#1a237e; font-weight:600;">Total Score</span>
+          <span id="total-display" style="font-size:1.4rem; font-weight:800; font-family:monospace; color:#1a237e;">0 / 100</span>
+          <span id="grade-display" style="font-size:1rem; font-weight:700; color:#2e7d32;"></span>
         </div>
       </div>
 
-      <!-- Grade preview -->
-      <div id="grade-preview" style="display:none; margin-top:16px; padding:14px 18px; background:#e8eaf6; border-radius:10px;">
-        <span style="font-size:0.88rem; color:#1a237e;">
-          Grade: <strong id="prev-grade" style="font-size:1.1rem;"></strong>
-          &nbsp;|&nbsp; Grade Point: <strong id="prev-point"></strong>
-        </span>
+      <div class="form-group" style="margin-top:14px;">
+        <label>Note</label>
+        <input type="text" name="note" placeholder="Optional">
       </div>
 
       <div style="margin-top:20px;">
@@ -79,33 +91,36 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Student</th><th>ID</th><th>Subject</th><th>Score</th><th>Grade</th><th>Semester</th><th>Year</th><th>Date</th></tr>
+        <tr>
+          <th>Student</th><th>Subject</th>
+          {% for a in assessments %}<th>{{ a.label }}</th>{% endfor %}
+          <th>Total</th><th>Grade</th><th>Sem</th><th>Year</th>
+        </tr>
       </thead>
       <tbody>
         {% for r in recent %}
-        {% set grade_map = {'A':'grade-A','B+':'grade-Bp','B':'grade-B','C+':'grade-Cp','C':'grade-C','D':'grade-D','F':'grade-F'} %}
+        {% if r.total_score >= 90 %}{% set gl = 'A' %}{% set gc = 'grade-A' %}
+        {% elif r.total_score >= 85 %}{% set gl = 'B+' %}{% set gc = 'grade-Bp' %}
+        {% elif r.total_score >= 80 %}{% set gl = 'B' %}{% set gc = 'grade-B' %}
+        {% elif r.total_score >= 75 %}{% set gl = 'C+' %}{% set gc = 'grade-Cp' %}
+        {% elif r.total_score >= 70 %}{% set gl = 'C' %}{% set gc = 'grade-C' %}
+        {% elif r.total_score >= 60 %}{% set gl = 'D' %}{% set gc = 'grade-D' %}
+        {% else %}{% set gl = 'F' %}{% set gc = 'grade-F' %}{% endif %}
         <tr>
           <td><a href="/staff/student/{{ r.student_id }}" style="color:#1a237e;font-weight:600;">{{ r.full_name }}</a></td>
-          <td class="mono" style="color:#757575;">{{ r.student_no }}</td>
-          <td>{{ r.subject_name }} <span style="color:#9e9e9e;font-size:0.78rem;">({{ r.subject_code }})</span></td>
-          <td class="mono">{{ r.score|int }}</td>
-          <td>
-            {% set g = namespace(letter='', cls='') %}
-            {% if r.score >= 90 %}{% set g.letter = 'A' %}{% set g.cls = 'grade-A' %}
-            {% elif r.score >= 85 %}{% set g.letter = 'B+' %}{% set g.cls = 'grade-Bp' %}
-            {% elif r.score >= 80 %}{% set g.letter = 'B' %}{% set g.cls = 'grade-B' %}
-            {% elif r.score >= 75 %}{% set g.letter = 'C+' %}{% set g.cls = 'grade-Cp' %}
-            {% elif r.score >= 70 %}{% set g.letter = 'C' %}{% set g.cls = 'grade-C' %}
-            {% elif r.score >= 60 %}{% set g.letter = 'D' %}{% set g.cls = 'grade-D' %}
-            {% else %}{% set g.letter = 'F' %}{% set g.cls = 'grade-F' %}{% endif %}
-            <span class="mono {{ g.cls }}">{{ g.letter }}</span>
-          </td>
+          <td>{{ r.subject_name }}</td>
+          <td class="mono">{{ r.quiz }}</td>
+          <td class="mono">{{ r.test1 }}</td>
+          <td class="mono">{{ r.test2 }}</td>
+          <td class="mono">{{ r.assignment }}</td>
+          <td class="mono">{{ r.final }}</td>
+          <td class="mono {{ gc }}"><strong>{{ r.total_score|int }}</strong></td>
+          <td class="mono {{ gc }}">{{ gl }}</td>
           <td class="mono">{{ r.semester }}</td>
           <td style="font-size:0.82rem;">{{ r.academic_year }}</td>
-          <td style="font-size:0.78rem;color:#9e9e9e;">{{ r.created_at[:10] }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="8"><div class="empty-state"><div class="icon">📭</div><p>No results entered yet.</p></div></td></tr>
+        <tr><td colspan="11"><div class="empty-state"><div class="icon">📭</div><p>No results entered yet.</p></div></td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -115,19 +130,26 @@
 
 {% block scripts %}
 <script>
+const ASSESSMENTS = {{ assessments | tojson }};
 const gradeMap = [
-  [90, 'A',  4.0], [85, 'B+', 3.5], [80, 'B',  3.0],
-  [75, 'C+', 2.5], [70, 'C',  2.0], [60, 'D',  1.0], [0, 'F', 0.0]
+  [90,'A'],[85,'B+'],[80,'B'],[75,'C+'],[70,'C'],[60,'D'],[0,'F']
 ];
+const gradeColors = {
+  'A':'#2e7d32','B+':'#388e3c','B':'#689f38',
+  'C+':'#ef6c00','C':'#f57c00','D':'#e64a19','F':'#c62828'
+};
 
-document.querySelector('input[name=score]').addEventListener('input', function() {
-  const score = parseFloat(this.value);
-  const prev  = document.getElementById('grade-preview');
-  if (isNaN(score) || score < 0 || score > 100) { prev.style.display='none'; return; }
-  const [, letter, point] = gradeMap.find(([min]) => score >= min);
-  document.getElementById('prev-grade').textContent = letter;
-  document.getElementById('prev-point').textContent = point.toFixed(1);
-  prev.style.display = 'block';
-});
+function calcTotal() {
+  let total = 0;
+  ASSESSMENTS.forEach(a => {
+    const el = document.querySelector(`input[name="${a.key}"]`);
+    total += parseFloat(el?.value || 0);
+  });
+  document.getElementById('total-display').textContent = total.toFixed(1) + ' / 100';
+  const [, grade] = gradeMap.find(([min]) => total >= min);
+  const gradeEl = document.getElementById('grade-display');
+  gradeEl.textContent = 'Grade: ' + grade;
+  gradeEl.style.color = gradeColors[grade] || '#333';
+}
 </script>
 {% endblock %}
