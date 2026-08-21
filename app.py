@@ -648,9 +648,6 @@ def login():
     school_photo = os.path.exists(SCHOOL_PHOTO_PATH)
     return render_template("login.html", school_photo=school_photo)
 
-
-@app.route("/admin/upload-photo", methods=["POST"])
-@login_required(role="admin")
 def admin_upload_photo():
     if "photo" not in request.files:
         flash("No file selected.", "error")
