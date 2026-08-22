@@ -1,24 +1,17 @@
 """
 app.py — Student Academic Result Portal
 Waliya Primary School
-Three roles: Admin, Staff, Student
-Assessments: Quiz(5), Test1(10), Test2(15), Assignment(10), Final(60) = 100
-Grade is calculated but must be confirmed by staff before saving.
 """
 
 import os
 import sqlite3
 from functools import wraps
-from flask import (
-    Flask, render_template, request, jsonify,
-    redirect, url_for, session, flash
-)
+from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "waliya-primary-school-secret-key-2026")
 DB_PATH = os.environ.get("DB_PATH", "portal.db")
-
 SCHOOL_PHOTO_PATH = os.path.join("static", "school_photo.jpg")
 
 ASSESSMENTS = [
@@ -28,11 +21,8 @@ ASSESSMENTS = [
     {"key": "assignment", "label": "Assignment",  "max": 10},
     {"key": "final",      "label": "Final Exam",  "max": 60},
 ]
-TOTAL_MAX = 100
 GRADE_OPTIONS = ["A", "B+", "B", "C+", "C", "D", "F"]
 
-
-# ─── Grading ───────────────────────────────────────────────────────────────
 
 def score_to_grade(score):
     if score >= 90: return "A",  4.0
@@ -49,16 +39,12 @@ def grade_to_point(grade):
 
 
 def calc_gpa(results):
-    total_points = total_credits = 0
+    tp = tc = 0
     for r in results:
-        total_points  += grade_to_point(r["confirmed_grade"]) * r["credit_hours"]
-        total_credits += r["credit_hours"]
-    if not total_credits:
-        return 0.0, 0
-    return round(total_points / total_credits, 2), total_credits
+        tp += grade_to_point(r["confirmed_grade"]) * r["credit_hours"]
+        tc += r["credit_hours"]
+    return (round(tp/tc, 2), tc) if tc else (0.0, 0)
 
-
-# ─── Database ──────────────────────────────────────────────────────────────
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -76,11 +62,7 @@ def init_db():
             password_hash TEXT NOT NULL,
             full_name     TEXT NOT NULL,
             role          TEXT NOT NULL CHECK(role IN ('admin','staff','student')),
-            department    TEXT,
-            year          INTEGER,
-            section       TEXT,
-            email         TEXT,
-            phone         TEXT,
+            department    TEXT, year INTEGER, section TEXT, email TEXT, phone TEXT,
             created_at    TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS subjects (
@@ -104,6 +86,7 @@ def init_db():
             total_score     REAL NOT NULL DEFAULT 0,
             suggested_grade TEXT NOT NULL DEFAULT '',
             confirmed_grade TEXT NOT NULL DEFAULT '',
+            is_released     INTEGER NOT NULL DEFAULT 0,
             semester        TEXT NOT NULL,
             academic_year   TEXT NOT NULL,
             note            TEXT,
@@ -111,12 +94,16 @@ def init_db():
             UNIQUE(student_id, subject_id, semester, academic_year)
         );
     """)
+    # Add is_released column if upgrading from old db
+    try:
+        conn.execute("ALTER TABLE results ADD COLUMN is_released INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+    except:
+        pass
     admin = conn.execute("SELECT id FROM users WHERE role='admin' LIMIT 1").fetchone()
     if not admin:
-        conn.execute(
-            "INSERT INTO users (user_id, password_hash, full_name, role) VALUES (?,?,?,?)",
-            ("admin", generate_password_hash("admin123"), "System Administrator", "admin")
-        )
+        conn.execute("INSERT INTO users (user_id,password_hash,full_name,role) VALUES (?,?,?,?)",
+            ("admin", generate_password_hash("admin123"), "System Administrator", "admin"))
         print("[db] Default admin: ID=admin, Password=admin123")
     conn.commit()
     conn.close()
@@ -124,8 +111,6 @@ def init_db():
 
 init_db()
 
-
-# ─── Auth ──────────────────────────────────────────────────────────────────
 
 def login_required(role=None):
     def decorator(f):
@@ -144,35 +129,32 @@ def login_required(role=None):
 
 
 def current_user():
-    if "user_id" not in session:
-        return None
+    if "user_id" not in session: return None
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE id=?", (session["user_id"],)).fetchone()
     db.close()
     return user
 
 
-# ─── Auth routes ───────────────────────────────────────────────────────────
-
 @app.route("/")
 def index():
     if "user_id" in session:
-        role = session.get("role")
-        if role == "student": return redirect(url_for("student_dashboard"))
-        if role == "staff":   return redirect(url_for("staff_dashboard"))
-        if role == "admin":   return redirect(url_for("admin_dashboard"))
+        r = session.get("role")
+        if r == "student": return redirect(url_for("student_dashboard"))
+        if r == "staff":   return redirect(url_for("staff_dashboard"))
+        if r == "admin":   return redirect(url_for("admin_dashboard"))
     return redirect(url_for("login"))
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        user_id  = request.form.get("user_id", "").strip()
-        password = request.form.get("password", "").strip()
-        db = get_db()
-        user = db.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
+        uid = request.form.get("user_id","").strip()
+        pw  = request.form.get("password","").strip()
+        db  = get_db()
+        user = db.execute("SELECT * FROM users WHERE user_id=?", (uid,)).fetchone()
         db.close()
-        if user and check_password_hash(user["password_hash"], password):
+        if user and check_password_hash(user["password_hash"], pw):
             session["user_id"] = user["id"]
             session["role"]    = user["role"]
             session["name"]    = user["full_name"]
@@ -181,8 +163,7 @@ def login():
             if user["role"] == "admin":   return redirect(url_for("admin_dashboard"))
         else:
             flash("Invalid ID or password.", "error")
-    school_photo = os.path.exists(SCHOOL_PHOTO_PATH)
-    return render_template("login.html", school_photo=school_photo)
+    return render_template("login.html", school_photo=os.path.exists(SCHOOL_PHOTO_PATH))
 
 
 @app.route("/logout")
@@ -198,17 +179,17 @@ def logout():
 def student_dashboard():
     user = current_user()
     db   = get_db()
+    # Students only see RELEASED results
     results = db.execute("""
         SELECT r.*, s.name as subject_name, s.code as subject_code, s.credit_hours
         FROM results r JOIN subjects s ON r.subject_id=s.id
-        WHERE r.student_id=?
+        WHERE r.student_id=? AND r.is_released=1
         ORDER BY r.academic_year DESC, r.semester DESC, s.name
     """, (user["id"],)).fetchall()
     db.close()
     semesters = {}
     for r in results:
-        key = f"{r['academic_year']} — Semester {r['semester']}"
-        semesters.setdefault(key, []).append(r)
+        semesters.setdefault(f"{r['academic_year']} — Semester {r['semester']}", []).append(r)
     semester_gpas = {k: dict(zip(["gpa","credits"], calc_gpa(v))) for k,v in semesters.items()}
     cgpa, total_credits = calc_gpa(list(results))
     return render_template("student/dashboard.html",
@@ -255,13 +236,16 @@ def staff_enter_result():
     semester        = data.get("semester")
     academic_year   = data.get("academic_year")
     confirmed_grade = data.get("confirmed_grade","").strip()
+    is_released     = int(data.get("is_released", 0))
     note            = data.get("note","")
+
     if not all([student_id, subject_id, semester, academic_year, confirmed_grade]):
         flash("All fields including confirmed grade are required.", "error")
         return redirect(url_for("staff_dashboard"))
     if confirmed_grade not in GRADE_OPTIONS:
         flash("Invalid grade selected.", "error")
         return redirect(url_for("staff_dashboard"))
+
     scores = {}
     for a in ASSESSMENTS:
         try:
@@ -273,31 +257,46 @@ def staff_enter_result():
         except ValueError:
             flash(f"Invalid score for {a['label']}.", "error")
             return redirect(url_for("staff_dashboard"))
+
     total = sum(scores.values())
     suggested_grade, _ = score_to_grade(total)
+
     db = get_db()
     try:
         db.execute("""
             INSERT INTO results
               (student_id,subject_id,staff_id,quiz,test1,test2,assignment,final,
-               total_score,suggested_grade,confirmed_grade,semester,academic_year,note)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               total_score,suggested_grade,confirmed_grade,is_released,semester,academic_year,note)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(student_id,subject_id,semester,academic_year)
             DO UPDATE SET quiz=excluded.quiz,test1=excluded.test1,test2=excluded.test2,
               assignment=excluded.assignment,final=excluded.final,
               total_score=excluded.total_score,suggested_grade=excluded.suggested_grade,
-              confirmed_grade=excluded.confirmed_grade,note=excluded.note,
-              staff_id=excluded.staff_id,created_at=datetime('now')
+              confirmed_grade=excluded.confirmed_grade,is_released=excluded.is_released,
+              note=excluded.note,staff_id=excluded.staff_id,created_at=datetime('now')
         """, (student_id,subject_id,user["id"],
               scores["quiz"],scores["test1"],scores["test2"],
               scores["assignment"],scores["final"],
-              total,suggested_grade,confirmed_grade,semester,academic_year,note))
+              total,suggested_grade,confirmed_grade,is_released,
+              semester,academic_year,note))
         db.commit()
-        flash(f"Result saved. Total: {total:.1f}/100 — Grade: {confirmed_grade}", "success")
+        status = "Released" if is_released else "Draft"
+        flash(f"Result saved as {status}. Total: {total:.1f}/100 — Grade: {confirmed_grade}", "success")
     except Exception as e:
         flash(f"Error: {e}", "error")
     finally:
         db.close()
+    return redirect(url_for("staff_dashboard"))
+
+
+@app.route("/staff/release/<int:rid>", methods=["POST"])
+@login_required(role="staff")
+def staff_release(rid):
+    db = get_db()
+    db.execute("UPDATE results SET is_released=1 WHERE id=?", (rid,))
+    db.commit()
+    db.close()
+    flash("Result released to student.", "success")
     return redirect(url_for("staff_dashboard"))
 
 
@@ -361,16 +360,12 @@ def admin_dashboard():
 @app.route("/admin/upload-photo", methods=["POST"])
 @login_required(role="admin")
 def admin_upload_photo():
-    if "photo" not in request.files:
-        flash("No file selected.", "error")
-        return redirect(url_for("admin_dashboard"))
-    file = request.files["photo"]
-    if file.filename == "":
+    if "photo" not in request.files or request.files["photo"].filename == "":
         flash("No file selected.", "error")
         return redirect(url_for("admin_dashboard"))
     os.makedirs("static", exist_ok=True)
-    file.save(SCHOOL_PHOTO_PATH)
-    flash("School photo updated successfully.", "success")
+    request.files["photo"].save(SCHOOL_PHOTO_PATH)
+    flash("School photo updated.", "success")
     return redirect(url_for("admin_dashboard"))
 
 
@@ -389,14 +384,12 @@ def admin_add_student():
     data = request.form
     db   = get_db()
     try:
-        db.execute("""
-            INSERT INTO users (user_id,password_hash,full_name,role,department,year,section,email,phone)
-            VALUES (?,?,?,?,?,?,?,?,?)
-        """, (data["user_id"].strip(), generate_password_hash(data["password"].strip()),
-              data["full_name"].strip(), "student",
-              data.get("department","").strip(), data.get("year",1),
-              data.get("section","").strip(), data.get("email","").strip(),
-              data.get("phone","").strip()))
+        db.execute("""INSERT INTO users (user_id,password_hash,full_name,role,department,year,section,email,phone)
+            VALUES (?,?,?,?,?,?,?,?,?)""",
+            (data["user_id"].strip(), generate_password_hash(data["password"].strip()),
+             data["full_name"].strip(), "student", data.get("department","").strip(),
+             data.get("year",1), data.get("section","").strip(),
+             data.get("email","").strip(), data.get("phone","").strip()))
         db.commit()
         flash(f"Student '{data['full_name']}' added.", "success")
     except sqlite3.IntegrityError:
@@ -433,13 +426,11 @@ def admin_add_staff():
     data = request.form
     db   = get_db()
     try:
-        db.execute("""
-            INSERT INTO users (user_id,password_hash,full_name,role,department,email,phone)
-            VALUES (?,?,?,?,?,?,?)
-        """, (data["user_id"].strip(), generate_password_hash(data["password"].strip()),
-              data["full_name"].strip(), "staff",
-              data.get("department","").strip(), data.get("email","").strip(),
-              data.get("phone","").strip()))
+        db.execute("""INSERT INTO users (user_id,password_hash,full_name,role,department,email,phone)
+            VALUES (?,?,?,?,?,?,?)""",
+            (data["user_id"].strip(), generate_password_hash(data["password"].strip()),
+             data["full_name"].strip(), "staff", data.get("department","").strip(),
+             data.get("email","").strip(), data.get("phone","").strip()))
         db.commit()
         flash(f"Staff '{data['full_name']}' added.", "success")
     except sqlite3.IntegrityError:
@@ -548,11 +539,20 @@ def admin_reset_password(uid):
                (generate_password_hash(new_pass), uid))
     db.commit()
     db.close()
-    flash("Password reset successfully.", "success")
+    flash("Password reset.", "success")
     return redirect(url_for("admin_students"))
 
 
-# ─── Run ───────────────────────────────────────────────────────────────────
+@app.route("/admin/release/<int:rid>", methods=["POST"])
+@login_required(role="admin")
+def admin_release(rid):
+    db = get_db()
+    db.execute("UPDATE results SET is_released=1 WHERE id=?", (rid,))
+    db.commit()
+    db.close()
+    flash("Result released.", "success")
+    return redirect(url_for("admin_results"))
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
