@@ -550,4 +550,4 @@ def admin_add_subject():
 def admin_delete_subject(sid):
     conn = get_db()
     cur  = conn.cursor()
-    cur.execute("DELETE FROM
+    cur.execute("DELETE FROM results WHERE student_id=%s", (sid,))
