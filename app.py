@@ -5,8 +5,8 @@ Uses PostgreSQL (Neon.tech) for persistent data storage
 """
 
 import os
-import psycopg2
-import psycopg2.extras
+import psycopg
+from psycopg.rows import dict_row
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -51,7 +51,7 @@ def calc_gpa(results):
 # ─── Database ──────────────────────────────────────────────────────────────
 
 def get_db():
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    conn = psycopg2.connect(DATABASE_URL, row_factory=dict_row)
     return conn
 
 
@@ -441,7 +441,7 @@ def admin_add_student():
              data.get("email","").strip(), data.get("phone","").strip()))
         conn.commit()
         flash(f"Student '{data['full_name']}' added.", "success")
-    except psycopg2.IntegrityError:
+    except psycopg.errors.UniqueViolation:
         conn.rollback()
         flash(f"ID '{data['user_id']}' already exists.", "error")
     finally:
@@ -490,7 +490,7 @@ def admin_add_staff():
              data.get("email","").strip(), data.get("phone","").strip()))
         conn.commit()
         flash(f"Staff '{data['full_name']}' added.", "success")
-    except psycopg2.IntegrityError:
+    except psycopg.errors.UniqueViolation:
         conn.rollback()
         flash(f"ID '{data['user_id']}' already exists.", "error")
     finally:
@@ -536,7 +536,7 @@ def admin_add_subject():
              int(data.get("credit_hours",3)), data.get("department","").strip()))
         conn.commit()
         flash(f"Subject '{data['name']}' added.", "success")
-    except psycopg2.IntegrityError:
+    except psycopg.errors.UniqueViolation:
         conn.rollback()
         flash(f"Code '{data['code']}' already exists.", "error")
     finally:
@@ -550,4 +550,90 @@ def admin_add_subject():
 def admin_delete_subject(sid):
     conn = get_db()
     cur  = conn.cursor()
-    cur.execute("DELETE FROM results WHERE student_id=%s", (sid,))
+    cur.execute("DELETE FROM results WHERE subject_id=%s", (sid,))
+    cur.execute("DELETE FROM subjects WHERE id=%s", (sid,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    flash("Subject deleted.", "success")
+    return redirect(url_for("admin_subjects"))
+
+
+@app.route("/admin/results")
+@login_required(role="admin")
+def admin_results():
+    conn = get_db()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT r.*, u.full_name, u.user_id as student_no,
+               s.name as subject_name, s.code, st.full_name as staff_name
+        FROM results r JOIN users u ON r.student_id=u.id
+        JOIN subjects s ON r.subject_id=s.id
+        LEFT JOIN users st ON r.staff_id=st.id
+        ORDER BY r.created_at DESC
+    """)
+    results = cur.fetchall()
+    cur.close()
+    conn.close()
+    return render_template("admin/results.html", results=results, assessments=ASSESSMENTS)
+
+
+@app.route("/admin/student/<int:sid>")
+@login_required(role="admin")
+def admin_view_student(sid):
+    conn = get_db()
+    cur  = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE id=%s", (sid,))
+    student = cur.fetchone()
+    cur.execute("""
+        SELECT r.*, s.name as subject_name, s.code as subject_code, s.credit_hours
+        FROM results r JOIN subjects s ON r.subject_id=s.id
+        WHERE r.student_id=%s ORDER BY r.academic_year DESC, r.semester DESC, s.name
+    """, (sid,))
+    results = cur.fetchall()
+    cur.close()
+    conn.close()
+    semesters = {}
+    for r in results:
+        semesters.setdefault(f"{r['academic_year']} — Semester {r['semester']}", []).append(r)
+    cgpa, total_credits = calc_gpa(list(results))
+    return render_template("admin/view_student.html",
+        student=student, semesters=semesters,
+        cgpa=cgpa, total_credits=total_credits,
+        grade_to_point=grade_to_point, assessments=ASSESSMENTS)
+
+
+@app.route("/admin/reset-password/<int:uid>", methods=["POST"])
+@login_required(role="admin")
+def admin_reset_password(uid):
+    new_pass = request.form.get("new_password","").strip()
+    if not new_pass:
+        flash("Password cannot be empty.", "error")
+        return redirect(url_for("admin_students"))
+    conn = get_db()
+    cur  = conn.cursor()
+    cur.execute("UPDATE users SET password_hash=%s WHERE id=%s",
+               (generate_password_hash(new_pass), uid))
+    conn.commit()
+    cur.close()
+    conn.close()
+    flash("Password reset.", "success")
+    return redirect(url_for("admin_students"))
+
+
+@app.route("/admin/release/<int:rid>", methods=["POST"])
+@login_required(role="admin")
+def admin_release(rid):
+    conn = get_db()
+    cur  = conn.cursor()
+    cur.execute("UPDATE results SET is_released=1 WHERE id=%s", (rid,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    flash("Result released.", "success")
+    return redirect(url_for("admin_results"))
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
