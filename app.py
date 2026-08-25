@@ -51,7 +51,7 @@ def calc_gpa(results):
 # ─── Database ──────────────────────────────────────────────────────────────
 
 def get_db():
-    conn = psycopg2.connect(DATABASE_URL, row_factory=dict_row)
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     return conn
 
 
